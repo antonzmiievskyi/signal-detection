@@ -5,3 +5,4 @@ __pycache__/
 results/
 *.db
 .tranco/
+.DS_Store
