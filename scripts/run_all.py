@@ -12,8 +12,12 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 
+from dotenv import load_dotenv
+
 from db import init_db, start_run, finish_run, save_signal, update_outages
 from db import get_active_outages, get_run_summary
+
+load_dotenv()
 
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.join(SCRIPTS_DIR, "..")
@@ -272,6 +276,26 @@ def main():
     print(f"  Results: {RESULTS_DIR}/")
     print(f"  Database: {os.path.abspath(os.path.join(ROOT_DIR, 'signal_detection.db'))}")
     print(f"  Report: {os.path.join(RESULTS_DIR, ANALYZER[2])}")
+
+    # Best-effort Slack notification (never fails the pipeline)
+    if os.environ.get("SLACK_BOT_TOKEN") and os.environ.get("SLACK_CHANNEL"):
+        print(f"\n{'='*70}")
+        print("  SLACK NOTIFICATION")
+        print(f"{'='*70}")
+        try:
+            from notify_slack import build_blocks, post_to_slack
+            blocks, fallback = build_blocks(run_id)
+            result = post_to_slack(
+                os.environ["SLACK_BOT_TOKEN"],
+                os.environ["SLACK_CHANNEL"],
+                blocks,
+                fallback,
+            )
+            print(f"  Posted to Slack: channel={result.get('channel')} ts={result.get('ts')}")
+        except Exception as e:
+            print(f"  WARNING: Slack notification failed: {e}")
+    else:
+        print("\n  (Skipping Slack: SLACK_BOT_TOKEN or SLACK_CHANNEL not set)")
 
     failed = [n for n, s in step_results.items() if s == "FAILED"]
     if failed:
