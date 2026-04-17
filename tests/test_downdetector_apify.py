@@ -52,43 +52,59 @@ PAGE_UNPARSEABLE = """
 
 
 class TestParseDowndetectorHtml:
-    def test_no_problems(self):
-        result = parse_downdetector_html(PAGE_NO_PROBLEMS, "epic-games-store")
+    """Tests use fallback (title-based) parsing by disabling AI."""
+
+    @patch("scripts.check_downdetector_apify.OPENAI_API_KEY", "")
+    def test_title_no_problems(self):
+        html = "<html><head><title>Steam - No problems detected</title></head><body></body></html>"
+        result = parse_downdetector_html(html, "steam")
         assert result["status"] == "ok"
         assert result["outage_detected"] is False
-        assert result["detail"] == "No problems reported"
 
-    def test_problems_detected(self):
-        result = parse_downdetector_html(PAGE_PROBLEMS, "steam")
+    @patch("scripts.check_downdetector_apify.OPENAI_API_KEY", "")
+    def test_title_outage(self):
+        html = "<html><head><title>EA down? Current outages and problems - US</title></head><body></body></html>"
+        result = parse_downdetector_html(html, "ea")
         assert result["status"] == "ok"
         assert result["outage_detected"] is True
-        assert "Problems reported" in result["detail"]
+        assert "down?" in result["detail"].lower()
 
-    def test_extracts_report_counts(self):
-        result = parse_downdetector_html(PAGE_PROBLEMS, "steam")
-        assert "recent_reports" in result
-        assert "peak_reports" in result
-        assert result["peak_reports"] == 200
-
-    def test_recent_reports_sum_last_4(self):
-        result = parse_downdetector_html(PAGE_PROBLEMS, "steam")
-        # Last 4 values: 150, 90, 60, 30
-        assert result["recent_reports"] == 330
-
-    def test_unparseable_page(self):
+    @patch("scripts.check_downdetector_apify.OPENAI_API_KEY", "")
+    def test_no_title_no_status(self):
         result = parse_downdetector_html(PAGE_UNPARSEABLE, "test")
         assert result["outage_detected"] is None
-        assert "Could not parse" in result["detail"]
 
+    @patch("scripts.check_downdetector_apify.OPENAI_API_KEY", "")
     def test_url_set_correctly(self):
         result = parse_downdetector_html(PAGE_NO_PROBLEMS, "nintendo")
         assert result["url"] == "https://downdetector.com/status/nintendo/"
 
-    def test_no_chart_data(self):
-        html = "<html><body><h2>No problems at Test</h2></body></html>"
+    @patch("scripts.check_downdetector_apify.OPENAI_API_KEY", "")
+    def test_no_title_falls_back_to_unclear(self):
+        html = "<html><body><p>Some content</p></body></html>"
         result = parse_downdetector_html(html, "test")
-        assert result["outage_detected"] is False
-        assert "recent_reports" not in result
+        assert result["outage_detected"] is None
+        assert "no title" in result["detail"].lower()
+
+    @patch("scripts.check_downdetector_apify.OPENAI_API_KEY", "test-key")
+    @patch("scripts.check_downdetector_apify.analyze_with_ai")
+    def test_ai_analysis_called(self, mock_ai):
+        mock_ai.return_value = {
+            "outage_detected": True,
+            "severity": "major",
+            "status_summary": "Server issues",
+            "report_trend": "rising",
+            "issue_types": ["server", "login"],
+            "comment_sentiment": "negative",
+            "comment_summary": "Users report crashes",
+            "geographic_pattern": None,
+            "confidence": "high",
+        }
+        result = parse_downdetector_html(PAGE_PROBLEMS, "steam")
+        assert result["outage_detected"] is True
+        assert result["severity"] == "major"
+        assert result["comment_summary"] == "Users report crashes"
+        mock_ai.assert_called_once()
 
 
 class TestFetchPageViaApify:
@@ -163,16 +179,6 @@ class TestFetchPageViaApify:
 
 
 class TestProcessFetchResult:
-    def test_no_problems(self):
-        result = process_fetch_result({"html": PAGE_NO_PROBLEMS}, "epic-games-store")
-        assert result["status"] == "ok"
-        assert result["outage_detected"] is False
-
-    def test_outage_detected(self):
-        result = process_fetch_result({"html": PAGE_PROBLEMS}, "steam")
-        assert result["outage_detected"] is True
-        assert result["peak_reports"] == 200
-
     def test_cloudflare_not_bypassed(self):
         result = process_fetch_result({"html": PAGE_CLOUDFLARE}, "steam")
         assert result["status"] == "blocked"
@@ -181,3 +187,17 @@ class TestProcessFetchResult:
         result = process_fetch_result({"error": "Actor timed out"}, "steam")
         assert result["status"] == "error"
         assert "timed out" in result["detail"]
+
+    @patch("scripts.check_downdetector_apify.OPENAI_API_KEY", "")
+    def test_title_outage(self):
+        html = "<html><head><title>EA down? Current outages</title></head><body></body></html>"
+        result = process_fetch_result({"html": html}, "ea")
+        assert result["status"] == "ok"
+        assert result["outage_detected"] is True
+
+    @patch("scripts.check_downdetector_apify.OPENAI_API_KEY", "")
+    def test_no_problems(self):
+        html = "<html><head><title>EA - No problems detected</title></head><body></body></html>"
+        result = process_fetch_result({"html": html}, "ea")
+        assert result["status"] == "ok"
+        assert result["outage_detected"] is False
