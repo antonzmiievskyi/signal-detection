@@ -1,0 +1,65 @@
+[
+  {
+    "company": "Activision Blizzard",
+    "domain": "activisionblizzard.com",
+    "industry": "Gaming",
+    "country": "US",
+    "downdetector_slug": "activision-blizzard"
+  },
+  {
+    "company": "Electronic Arts",
+    "domain": "ea.com",
+    "industry": "Gaming",
+    "country": "US",
+    "downdetector_slug": "ea"
+  },
+  {
+    "company": "Ubisoft",
+    "domain": "ubisoft.com",
+    "industry": "Gaming",
+    "country": "FR",
+    "downdetector_slug": "ubisoft"
+  },
+  {
+    "company": "Take-Two Interactive",
+    "domain": "take2games.com",
+    "industry": "Gaming",
+    "country": "US",
+    "downdetector_slug": "take-two-interactive"
+  },
+  {
+    "company": "Epic Games",
+    "domain": "epicgames.com",
+    "industry": "Gaming",
+    "country": "US",
+    "downdetector_slug": "epic-games-store"
+  },
+  {
+    "company": "Riot Games",
+    "domain": "riotgames.com",
+    "industry": "Gaming",
+    "country": "US",
+    "downdetector_slug": "riot-games"
+  },
+  {
+    "company": "Nintendo",
+    "domain": "nintendo.com",
+    "industry": "Gaming",
+    "country": "JP",
+    "downdetector_slug": "nintendo"
+  },
+  {
+    "company": "Square Enix",
+    "domain": "square-enix.com",
+    "industry": "Gaming",
+    "country": "JP",
+    "downdetector_slug": "square-enix"
+  },
+  {
+    "company": "CD Projekt Red",
+    "domain": "cdprojektred.com",
+    "industry": "Gaming",
+    "country": "PL",
+    "downdetector_slug": "cd-projekt-red"
+  }
+]

@@ -1,0 +1,9 @@
+requests>=2.31
+python-dotenv>=1.0
+apify-client>=2.5
+openai>=1.0
+
+# testing
+pytest>=8.0
+pytest-asyncio>=1.0
+pytest-timeout>=2.0
