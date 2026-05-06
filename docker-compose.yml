@@ -1,0 +1,34 @@
+# Continuous-mode pipeline runner.
+#
+# Brings up a single service that loops run_all.py on a fixed cadence,
+# enabling the T_min duration filter to actually do its job (single-run
+# manual invocations short-circuit T_min — leads need to *sustain*).
+#
+# Usage:
+#   cp .env.example .env       # populate API keys if not already done
+#   docker compose up -d       # background continuous mode
+#   docker compose logs -f     # tail iterations
+#   docker compose down        # stop
+#
+# Override the cadence on the fly:
+#   PIPELINE_INTERVAL_SECONDS=300 docker compose up -d
+#
+# Override the company list (e.g. the prospect list):
+#   COMPANIES_FILE=prospects.json docker compose up -d
+
+services:
+  pipeline:
+    build: .
+    container_name: signal-detection-pipeline
+    env_file:
+      - .env
+    environment:
+      PIPELINE_INTERVAL_SECONDS: "${PIPELINE_INTERVAL_SECONDS:-1800}"
+      COMPANIES_FILE: "${COMPANIES_FILE:-companies.json}"
+      MIN_DURATION_MINUTES: "${MIN_DURATION_MINUTES:-5}"
+    volumes:
+      # Bind-mount the project root so the loop reads the latest code,
+      # writes results/ alongside the host tree, and persists
+      # signal_detection.db on the host.
+      - ./:/app
+    restart: unless-stopped
