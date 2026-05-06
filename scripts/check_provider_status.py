@@ -14,6 +14,11 @@ from datetime import datetime, timezone
 
 import requests
 
+try:
+    from detect_provider import detect_providers  # script-style execution
+except ImportError:  # imported as scripts.check_provider_status (e.g. by pytest)
+    from scripts.detect_provider import detect_providers
+
 COMPANIES_FILE = os.path.join(os.path.dirname(__file__), "..", "companies.json")
 
 PROVIDERS = {
@@ -97,6 +102,8 @@ def main():
     print(f"Timestamp: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
     print("=" * 70)
 
+    providers_with_incidents: set[str] = set()
+
     for provider, base_url in PROVIDERS.items():
         print(f"\n{'='*70}")
         print(f"  {provider.upper()}")
@@ -122,6 +129,7 @@ def main():
             # Unresolved incidents
             unresolved = get_unresolved(base_url)
             if unresolved:
+                providers_with_incidents.add(provider)
                 print(f"\n  ACTIVE INCIDENTS ({len(unresolved)}):")
                 for inc in unresolved:
                     print(format_incident(inc))
@@ -140,6 +148,28 @@ def main():
 
         except requests.RequestException as e:
             print(f"\n  ERROR fetching {provider}: {e}")
+
+    # Per-company attribution: which monitored companies sit on a provider
+    # that currently has an unresolved incident? This is what should drive
+    # per-company outage flags downstream.
+    print(f"\n{'='*70}")
+    print("  PER-COMPANY ATTRIBUTION")
+    print(f"{'='*70}")
+    domain_to_provider = detect_providers([c["domain"] for c in companies])
+    affected: list[str] = []
+    for c in companies:
+        prov = domain_to_provider.get(c["domain"])
+        is_affected = prov is not None and prov in providers_with_incidents
+        marker = "AFFECTED" if is_affected else ("ok" if prov else "?")
+        print(f"  [{marker:<8}] {c['company']:<30} {c['domain']:<35} provider={prov or '-'}")
+        if is_affected:
+            affected.append(c["company"])
+
+    # Machine-readable summary lines for run_all.py to parse.
+    # Keep these on dedicated lines, no wrapping, comma-separated.
+    print()
+    print(f"PROVIDERS_WITH_INCIDENTS: {','.join(sorted(providers_with_incidents))}")
+    print(f"AFFECTED_COMPANIES: {','.join(affected)}")
 
 
 if __name__ == "__main__":

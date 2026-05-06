@@ -91,6 +91,16 @@ def run_script(name: str, script: str, output_file: str, companies_path: str | N
         return False, ""
 
 
+def _parse_kv_list(output: str, key: str) -> list[str]:
+    """Extract a 'KEY: a,b,c' line from script output, returning [a,b,c]."""
+    prefix = f"{key}:"
+    for line in output.splitlines():
+        if line.startswith(prefix):
+            payload = line[len(prefix):].strip()
+            return [item.strip() for item in payload.split(",") if item.strip()]
+    return []
+
+
 def parse_signals_from_output(vendor: str, output: str, companies: list[dict]) -> list[dict]:
     """Parse checker script output into structured signals for the database.
 
@@ -110,15 +120,21 @@ def parse_signals_from_output(vendor: str, output: str, companies: list[dict]) -
         }
 
         if vendor == "provider_status":
-            # Provider status shows provider-level issues, not per-company
-            # Check for active incidents across all providers
-            if "ACTIVE INCIDENTS" in output:
+            # Only flag a company as affected if its detected upstream provider
+            # is one of the providers currently reporting an incident. The
+            # checker emits these on dedicated lines for unambiguous parsing.
+            affected = _parse_kv_list(output, "AFFECTED_COMPANIES")
+            providers_down = _parse_kv_list(output, "PROVIDERS_WITH_INCIDENTS")
+            if name in affected:
                 signal["outage_detected"] = True
                 signal["severity"] = "minor"
-                signal["detail"] = "Active provider incidents detected"
+                signal["detail"] = f"Upstream provider incident: {', '.join(providers_down) or 'unknown'}"
             else:
                 signal["outage_detected"] = False
-                signal["detail"] = "All providers operational"
+                signal["detail"] = (
+                    "Provider incident(s) active but company not on affected provider"
+                    if providers_down else "All providers operational"
+                )
 
         elif vendor == "tranco":
             for line in output.split("\n"):
