@@ -4,5 +4,8 @@ __pycache__/
 .pytest_cache/
 results/
 *.db
+*.db-wal
+*.db-shm
 .tranco/
 .DS_Store
+.provider_cache.json
