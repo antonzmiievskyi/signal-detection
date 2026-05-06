@@ -7,6 +7,9 @@ import tempfile
 import pytest
 
 from scripts.db import (
+    CONFIDENCE_THRESHOLD,
+    VENDOR_WEIGHTS,
+    compute_confidence,
     finish_run,
     get_active_outages,
     get_connection,
@@ -264,6 +267,80 @@ class TestRunSummary:
     def test_nonexistent_run(self, db_path):
         summary = get_run_summary(999, db_path)
         assert summary == {}
+
+
+class TestConfidenceGating:
+    """D — provider_status alone must not create an outage; downdetector alone must."""
+
+    def test_provider_status_alone_does_not_create_outage(self, db_path):
+        run_id = start_run(db_path)
+        save_signal(run_id, "Acme", "acme.com", "provider_status",
+                    outage_detected=True, severity="minor", db_path=db_path)
+        transitions = update_outages(run_id, db_path)
+        assert not any(t["transition"] == "new" for t in transitions)
+        assert get_active_outages(db_path) == []
+
+    def test_downdetector_alone_creates_outage(self, db_path):
+        run_id = start_run(db_path)
+        save_signal(run_id, "Acme", "acme.com", "downdetector",
+                    outage_detected=True, severity="major", db_path=db_path)
+        transitions = update_outages(run_id, db_path)
+        assert any(t["transition"] == "new" for t in transitions)
+        active = get_active_outages(db_path)
+        assert len(active) == 1
+        assert active[0]["confidence"] == VENDOR_WEIGHTS["downdetector"]
+
+    def test_provider_plus_radar_passes_threshold(self, db_path):
+        run_id = start_run(db_path)
+        save_signal(run_id, "Acme", "acme.com", "provider_status",
+                    outage_detected=True, db_path=db_path)
+        save_signal(run_id, "Acme", "acme.com", "cloudflare_radar",
+                    outage_detected=True, severity="major", db_path=db_path)
+        transitions = update_outages(run_id, db_path)
+        assert any(t["transition"] == "new" for t in transitions)
+        active = get_active_outages(db_path)
+        assert len(active) == 1
+        assert active[0]["confidence"] >= CONFIDENCE_THRESHOLD
+
+    def test_tranco_alone_does_not_create_outage(self, db_path):
+        run_id = start_run(db_path)
+        save_signal(run_id, "Acme", "acme.com", "tranco",
+                    outage_detected=True, db_path=db_path)
+        transitions = update_outages(run_id, db_path)
+        assert not any(t["transition"] == "new" for t in transitions)
+
+    def test_ghost_outage_closes_when_evidence_drops(self, db_path):
+        # Run 1: legitimate downdetector outage → created
+        r1 = start_run(db_path)
+        save_signal(r1, "Acme", "acme.com", "downdetector",
+                    outage_detected=True, severity="major", db_path=db_path)
+        update_outages(r1, db_path)
+        assert len(get_active_outages(db_path)) == 1
+
+        # Run 2: only provider_status flags it → confidence below threshold → closes
+        r2 = start_run(db_path)
+        save_signal(r2, "Acme", "acme.com", "provider_status",
+                    outage_detected=True, db_path=db_path)
+        save_signal(r2, "Acme", "acme.com", "downdetector",
+                    outage_detected=False, db_path=db_path)
+        transitions = update_outages(r2, db_path)
+        assert any(t["transition"] == "resolved" for t in transitions)
+        assert get_active_outages(db_path) == []
+
+
+class TestComputeConfidence:
+    def test_known_vendors_sum_weights(self):
+        assert compute_confidence(["downdetector"]) == 0.7
+        assert compute_confidence(["provider_status", "cloudflare_radar"]) == pytest.approx(0.7)
+
+    def test_duplicates_count_once(self):
+        assert compute_confidence(["downdetector", "downdetector"]) == 0.7
+
+    def test_unknown_vendor_contributes_zero(self):
+        assert compute_confidence(["mystery"]) == 0.0
+
+    def test_empty_list(self):
+        assert compute_confidence([]) == 0.0
 
 
 class TestWorstSeverity:

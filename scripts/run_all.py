@@ -24,6 +24,11 @@ SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.join(SCRIPTS_DIR, "..")
 RESULTS_DIR = os.path.join(ROOT_DIR, "results")
 
+# Per-script subprocess timeout. The slowest step is Downdetector (Apify
+# scrape unblocker, ~30s/company sequentially) — at 52 companies the old
+# 600s ceiling clipped the run. 1800s leaves headroom up to ~60 companies.
+SCRIPT_TIMEOUT_SECONDS = 1800
+
 CHECKERS = [
     ("Provider Status Pages", "check_provider_status.py", "provider_status.txt", "provider_status"),
     ("Tranco Rankings", "check_tranco.py", "tranco.txt", "tranco"),
@@ -57,7 +62,7 @@ def run_script(name: str, script: str, output_file: str, companies_path: str | N
             cmd,
             capture_output=True,
             text=True,
-            timeout=600,
+            timeout=SCRIPT_TIMEOUT_SECONDS,
             cwd=ROOT_DIR,
         )
 
@@ -84,7 +89,7 @@ def run_script(name: str, script: str, output_file: str, companies_path: str | N
         return True, clean_output
 
     except subprocess.TimeoutExpired:
-        print(f"  ERROR: Script timed out after 600 seconds")
+        print(f"  ERROR: Script timed out after {SCRIPT_TIMEOUT_SECONDS} seconds")
         return False, ""
     except Exception as e:
         print(f"  ERROR: {e}")

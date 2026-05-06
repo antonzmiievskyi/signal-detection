@@ -71,20 +71,26 @@ def build_cross_reference(companies: list[dict], results: dict[str, str]) -> str
                 outage_lines = [l.strip() for l in section.split("\n") if l.strip() and not l.startswith("---")]
                 lines.append(f"  CF Radar ({country}): {'; '.join(outage_lines[:3])}")
 
-        # Provider status (check all 4)
+        # Provider status — use the structured AFFECTED_COMPANIES line that
+        # the checker emits, instead of scraping per-provider sections.
+        # The previous scan stopped at the closing === of each provider's
+        # header banner and never reached the ACTIVE INCIDENTS body.
         provider = results.get("provider_status", "")
-        active_issues = []
-        for prov_name in ["CLOUDFLARE", "AKAMAI", "F5", "IMPERVA"]:
-            if f"  {prov_name}" in provider:
-                start = provider.index(f"  {prov_name}")
-                next_section = provider.find("=" * 70, start + 10)
-                section = provider[start:next_section] if next_section != -1 else provider[start:]
-                if "ACTIVE INCIDENTS" in section:
-                    active_issues.append(prov_name)
-        if active_issues:
-            lines.append(f"  Provider issues: Active incidents at {', '.join(active_issues)}")
+        providers_down: list[str] = []
+        affected: list[str] = []
+        for line in provider.splitlines():
+            if line.startswith("PROVIDERS_WITH_INCIDENTS:"):
+                providers_down = [p.strip() for p in line.split(":", 1)[1].split(",") if p.strip()]
+            elif line.startswith("AFFECTED_COMPANIES:"):
+                affected = [p.strip() for p in line.split(":", 1)[1].split(",") if p.strip()]
+        if name in affected:
+            lines.append(
+                f"  Provider context: company on {', '.join(providers_down) or 'unknown'} which has active incidents (NOT a per-company outage by itself)"
+            )
+        elif providers_down:
+            lines.append(f"  Provider context: incidents at {', '.join(providers_down)} but company not on affected provider")
         else:
-            lines.append(f"  Provider issues: All providers operational")
+            lines.append(f"  Provider context: all monitored providers operational")
 
         # Downdetector (Apify only)
         dd = results.get("downdetector_apify", "")
@@ -190,10 +196,16 @@ Produce a structured report with these sections:
 ### 1. Signal Strength Rating
 For each company, rate the signal strength (STRONG / MODERATE / WEAK / NONE):
 - STRONG: Multiple realtime sources confirm an outage (e.g., Downdetector spike
-  + provider incident on the company's actual upstream)
+  + ASN-attributed Cloudflare Radar event)
 - MODERATE: One realtime source shows issues with supporting context
 - WEAK: Minor or single-source indicator
 - NONE: No outage signals detected
+
+NOTE on provider context: "Provider context" lines indicate that the company's
+upstream CDN has a public incident on its status page. This is CONTEXT only,
+NEVER sufficient on its own to count as an outage signal — most public
+status-page incidents are minor edge issues that don't affect customers.
+Only treat it as confirming evidence when paired with another realtime source.
 
 ### 2. Vendor Agreement Matrix
 Show where vendors agree or disagree on outage status. Multiple vendors
