@@ -8,6 +8,7 @@ Requires SLACK_BOT_TOKEN and SLACK_CHANNEL in the environment.
 
 import json
 import os
+import re
 import sqlite3
 import sys
 from datetime import datetime, timezone
@@ -15,11 +16,21 @@ from datetime import datetime, timezone
 import requests
 from dotenv import load_dotenv
 
-from db import get_active_outages, get_connection, get_run_summary
+try:
+    from db import get_active_outages, get_connection, get_run_summary  # script-style execution
+except ImportError:  # imported as scripts.notify_slack (e.g. by pytest)
+    from scripts.db import get_active_outages, get_connection, get_run_summary
 
 load_dotenv()
 
 SLACK_API = "https://slack.com/api/chat.postMessage"
+
+RESULTS_DIR = os.path.join(os.path.dirname(__file__), "..", "results")
+DEFAULT_REPORT_PATH = os.path.join(RESULTS_DIR, "signal_report.txt")
+
+# Slack section blocks have a 3000-char text limit; cap individual fields
+# generously below that.
+LEAD_FIELD_LIMIT = 240
 
 VENDORS = [
     ("provider_status", "Providers"),
@@ -104,7 +115,71 @@ def pretty_time(iso: str) -> str:
         return iso
 
 
-def build_blocks(run_id: int) -> tuple[list[dict], str]:
+def md_to_slack_mrkdwn(text: str) -> str:
+    """Convert markdown ** bold to Slack mrkdwn * bold (Slack flavor uses
+    single asterisks for bold)."""
+    return re.sub(r"\*\*(.+?)\*\*", r"*\1*", text)
+
+
+def _trim(text: str, limit: int = LEAD_FIELD_LIMIT) -> str:
+    text = " ".join(text.split())  # collapse whitespace and newlines
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip().rstrip(",;.:") + "…"
+
+
+def extract_actionable_signals(report_path: str = DEFAULT_REPORT_PATH) -> list[dict]:
+    """Pull the top actionable leads from a signal_report.txt produced by
+    analyze_signals.py.
+
+    The analyzer follows a consistent prompt template — section header
+    "## 3. Actionable Signals" followed by "### N. Company (industry, country)"
+    blocks with bullets for "What happened", "Vendors confirming",
+    "Suggested outreach angle", "Timing recommendation". This parser is
+    intentionally tolerant: missing fields return empty strings and an
+    unrecognized format returns []. Worst case the Slack message just
+    omits the leads block.
+    """
+    if not os.path.exists(report_path):
+        return []
+    with open(report_path) as f:
+        text = f.read()
+
+    # Stop at the next top-level (## ) header, not at sub-items (### N.).
+    section_match = re.search(
+        r"#+\s*\d*\.?\s*Actionable Signals.*?(?=\n## [^#]|\Z)",
+        text, re.IGNORECASE | re.DOTALL,
+    )
+    if not section_match:
+        return []
+    section = section_match.group(0)
+
+    items = re.split(r"\n#+\s+\d+\.\s+", section)[1:]
+
+    def field(item: str, label: str) -> str:
+        m = re.search(
+            rf"\*\*{re.escape(label)}[:*]*\s*(.+?)(?=\n\s*[-*]\s*\*\*|\n#+\s|\Z)",
+            item, re.DOTALL,
+        )
+        return m.group(1).strip() if m else ""
+
+    leads: list[dict] = []
+    for item in items:
+        first_line, _, _ = item.partition("\n")
+        company = first_line.split("(")[0].strip().rstrip(":")
+        if not company:
+            continue
+        leads.append({
+            "company": company,
+            "summary": field(item, "What happened"),
+            "vendors": field(item, "Vendors confirming"),
+            "angle":   field(item, "Suggested outreach angle"),
+            "timing":  field(item, "Timing recommendation"),
+        })
+    return leads
+
+
+def build_blocks(run_id: int, report_path: str = DEFAULT_REPORT_PATH) -> tuple[list[dict], str]:
     """Return (blocks, fallback_text) for chat.postMessage."""
     conn = get_connection()
     try:
@@ -217,6 +292,27 @@ def build_blocks(run_id: int) -> tuple[list[dict], str]:
                     "type": "mrkdwn",
                     "text": ":white_check_mark: *No active outages.* All tracked services are operational.",
                 },
+            }
+        )
+
+    # Top actionable leads from the GPT analysis (best-effort — silently
+    # omitted if the report is missing or in an unexpected format).
+    leads = extract_actionable_signals(report_path)
+    if leads:
+        lines = ["*🎯 Top actionable leads (from analysis)*"]
+        for i, lead in enumerate(leads[:5], 1):
+            lines.append(f"\n*{i}. {lead['company']}*")
+            if lead["summary"]:
+                lines.append(f"   • {_trim(md_to_slack_mrkdwn(lead['summary']))}")
+            if lead["angle"]:
+                lines.append(f"   • Angle: {_trim(md_to_slack_mrkdwn(lead['angle']))}")
+            if lead["timing"]:
+                lines.append(f"   • Timing: {_trim(md_to_slack_mrkdwn(lead['timing']), 120)}")
+        blocks.append({"type": "divider"})
+        blocks.append(
+            {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": "\n".join(lines)},
             }
         )
 
