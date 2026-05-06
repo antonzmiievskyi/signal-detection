@@ -156,18 +156,23 @@ def parse_signals_from_output(vendor: str, output: str, companies: list[dict]) -
                     break
 
         elif vendor == "cloudflare_radar":
+            # Country alone is too coarse: most CROC events are local-ISP
+            # outages, not CDN-edge. The checker now only includes a company
+            # in AFFECTED_COMPANIES_RADAR when its detected CDN's ASN
+            # actually appears in the country outage's asnsDetails.
             country = company["country"]
-            if f"Outages in {country}" in output:
-                start = output.index(f"Outages in {country}")
-                end = output.find("\n---", start + 1)
-                section = output[start:end] if end != -1 else output[start:]
-                if "No outages detected" in section:
-                    signal["outage_detected"] = False
-                    signal["detail"] = f"No network outages in {country}"
-                else:
-                    signal["outage_detected"] = True
-                    signal["severity"] = "major"
-                    signal["detail"] = section.strip()
+            affected = _parse_kv_list(output, "AFFECTED_COMPANIES_RADAR")
+            affected_countries = _parse_kv_list(output, "RADAR_AFFECTED_COUNTRIES")
+            if name in affected:
+                signal["outage_detected"] = True
+                signal["severity"] = "major"
+                signal["detail"] = f"Radar outage on company's CDN ASN ({country})"
+            elif country in affected_countries:
+                signal["outage_detected"] = False
+                signal["detail"] = f"Country-level Radar event in {country} but no ASN match for company"
+            else:
+                signal["outage_detected"] = False
+                signal["detail"] = f"No network outages in {country}"
 
         elif vendor == "crux":
             section_header = f"--- {name} ("
