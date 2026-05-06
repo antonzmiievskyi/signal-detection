@@ -1,0 +1,366 @@
+[
+  {
+    "company": "Quince",
+    "domain": "onequince.com",
+    "industry": "Retail",
+    "country": "US",
+    "downdetector_slug": "quince"
+  },
+  {
+    "company": "Misfits Market",
+    "domain": "misfitsmarket.com",
+    "industry": "Retail",
+    "country": "US",
+    "downdetector_slug": "misfits-market"
+  },
+  {
+    "company": "Caraway",
+    "domain": "carawayhome.com",
+    "industry": "Retail",
+    "country": "US",
+    "downdetector_slug": "caraway"
+  },
+  {
+    "company": "Our Place",
+    "domain": "fromourplace.com",
+    "industry": "Retail",
+    "country": "US",
+    "downdetector_slug": "our-place"
+  },
+  {
+    "company": "Magic Spoon",
+    "domain": "magicspoon.com",
+    "industry": "Retail",
+    "country": "US",
+    "downdetector_slug": "magic-spoon"
+  },
+  {
+    "company": "Cazoo",
+    "domain": "cazoo.co.uk",
+    "industry": "Retail",
+    "country": "GB",
+    "downdetector_slug": "cazoo"
+  },
+  {
+    "company": "Camp",
+    "domain": "camp.com",
+    "industry": "Retail",
+    "country": "US",
+    "downdetector_slug": "camp"
+  },
+  {
+    "company": "Superplastic",
+    "domain": "superplastic.co",
+    "industry": "Retail",
+    "country": "US",
+    "downdetector_slug": "superplastic"
+  },
+  {
+    "company": "Snackpass",
+    "domain": "snackpass.co",
+    "industry": "Retail",
+    "country": "US",
+    "downdetector_slug": "snackpass"
+  },
+  {
+    "company": "Zepto",
+    "domain": "zeptonow.com",
+    "industry": "Retail",
+    "country": "IN",
+    "downdetector_slug": "zepto"
+  },
+  {
+    "company": "Rho",
+    "domain": "rho.co",
+    "industry": "Banking",
+    "country": "US",
+    "downdetector_slug": "rho"
+  },
+  {
+    "company": "Baselane",
+    "domain": "baselane.com",
+    "industry": "Banking",
+    "country": "US",
+    "downdetector_slug": "baselane"
+  },
+  {
+    "company": "Found",
+    "domain": "found.com",
+    "industry": "Banking",
+    "country": "US",
+    "downdetector_slug": "found"
+  },
+  {
+    "company": "First Boulevard",
+    "domain": "firstboulevard.com",
+    "industry": "Banking",
+    "country": "US",
+    "downdetector_slug": "first-boulevard"
+  },
+  {
+    "company": "Nearside",
+    "domain": "nearside.com",
+    "industry": "Banking",
+    "country": "US",
+    "downdetector_slug": "nearside"
+  },
+  {
+    "company": "Finom",
+    "domain": "finom.com",
+    "industry": "Banking",
+    "country": "NL",
+    "downdetector_slug": "finom"
+  },
+  {
+    "company": "Neo Financial",
+    "domain": "neofinancial.com",
+    "industry": "Banking",
+    "country": "CA",
+    "downdetector_slug": "neo-financial"
+  },
+  {
+    "company": "Relay Financial",
+    "domain": "relayfi.com",
+    "industry": "Banking",
+    "country": "CA",
+    "downdetector_slug": "relay-financial"
+  },
+  {
+    "company": "Up Bank",
+    "domain": "up.com.au",
+    "industry": "Banking",
+    "country": "AU",
+    "downdetector_slug": "up-bank"
+  },
+  {
+    "company": "Winden",
+    "domain": "winden.app",
+    "industry": "Banking",
+    "country": "US",
+    "downdetector_slug": "winden"
+  },
+  {
+    "company": "Convesio",
+    "domain": "convesio.com",
+    "industry": "Hosting",
+    "country": "US",
+    "downdetector_slug": "convesio"
+  },
+  {
+    "company": "HostiFi",
+    "domain": "hostifi.com",
+    "industry": "Hosting",
+    "country": "US",
+    "downdetector_slug": "hostifi"
+  },
+  {
+    "company": "Cloudzy",
+    "domain": "cloudzy.com",
+    "industry": "Hosting",
+    "country": "US",
+    "downdetector_slug": "cloudzy"
+  },
+  {
+    "company": "Netbora",
+    "domain": "netbora.com",
+    "industry": "Hosting",
+    "country": "US",
+    "downdetector_slug": "netbora"
+  },
+  {
+    "company": "Aeza",
+    "domain": "aeza.net",
+    "industry": "Hosting",
+    "country": "RU",
+    "downdetector_slug": "aeza"
+  },
+  {
+    "company": "Latitude.sh",
+    "domain": "latitude.sh",
+    "industry": "Hosting",
+    "country": "BR",
+    "downdetector_slug": "latitude-sh"
+  },
+  {
+    "company": "Hydra Host",
+    "domain": "hydrahost.com",
+    "industry": "Hosting",
+    "country": "US",
+    "downdetector_slug": "hydra-host"
+  },
+  {
+    "company": "OpenMetal",
+    "domain": "openmetal.io",
+    "industry": "Hosting",
+    "country": "US",
+    "downdetector_slug": "openmetal"
+  },
+  {
+    "company": "Atlas Cloud",
+    "domain": "atlascloud.ai",
+    "industry": "Hosting",
+    "country": "US",
+    "downdetector_slug": "atlas-cloud"
+  },
+  {
+    "company": "Replit",
+    "domain": "replit.com",
+    "industry": "Hosting",
+    "country": "US",
+    "downdetector_slug": "replit"
+  },
+  {
+    "company": "1of1 Hosting",
+    "domain": "1of1servers.com",
+    "industry": "Hosting",
+    "country": "US",
+    "downdetector_slug": "1of1-hosting"
+  },
+  {
+    "company": "OnlyFans",
+    "domain": "onlyfans.com",
+    "industry": "Adult",
+    "country": "GB",
+    "downdetector_slug": "onlyfans"
+  },
+  {
+    "company": "Fansly",
+    "domain": "fansly.com",
+    "industry": "Adult",
+    "country": "US",
+    "downdetector_slug": "fansly"
+  },
+  {
+    "company": "AdmireMe.VIP",
+    "domain": "admireme.vip",
+    "industry": "Adult",
+    "country": "GB",
+    "downdetector_slug": "admireme-vip"
+  },
+  {
+    "company": "Fanvue",
+    "domain": "fanvue.com",
+    "industry": "Adult",
+    "country": "GB",
+    "downdetector_slug": "fanvue"
+  },
+  {
+    "company": "Unlockd",
+    "domain": "unlockd.me",
+    "industry": "Adult",
+    "country": "US",
+    "downdetector_slug": "unlockd"
+  },
+  {
+    "company": "iFans",
+    "domain": "ifans.com",
+    "industry": "Adult",
+    "country": "US",
+    "downdetector_slug": "ifans"
+  },
+  {
+    "company": "Okfans",
+    "domain": "okfans.com",
+    "industry": "Adult",
+    "country": "US",
+    "downdetector_slug": "okfans"
+  },
+  {
+    "company": "Vibe Games",
+    "domain": "vibegames.com",
+    "industry": "Online Gaming - Infra",
+    "country": "US",
+    "downdetector_slug": "vibe-games"
+  },
+  {
+    "company": "Infraly",
+    "domain": "infraly.co",
+    "industry": "Online Gaming - Infra",
+    "country": "US",
+    "downdetector_slug": "infraly"
+  },
+  {
+    "company": "Epic Games",
+    "domain": "epicgames.com",
+    "industry": "Online Gaming - Infra",
+    "country": "US",
+    "downdetector_slug": "epic-games-store"
+  },
+  {
+    "company": "Nitrado",
+    "domain": "nitrado.net",
+    "industry": "Online Gaming - Infra",
+    "country": "DE",
+    "downdetector_slug": "nitrado"
+  },
+  {
+    "company": "Stake",
+    "domain": "stake.com",
+    "industry": "Online Gaming - Operator",
+    "country": "CW",
+    "downdetector_slug": "stake"
+  },
+  {
+    "company": "Rollbit",
+    "domain": "rollbit.com",
+    "industry": "Online Gaming - Operator",
+    "country": "CW",
+    "downdetector_slug": "rollbit"
+  },
+  {
+    "company": "Roobet",
+    "domain": "roobet.com",
+    "industry": "Online Gaming - Operator",
+    "country": "CW",
+    "downdetector_slug": "roobet"
+  },
+  {
+    "company": "Wintomato",
+    "domain": "wintomato.com",
+    "industry": "Online Gaming - Operator",
+    "country": "US",
+    "downdetector_slug": "wintomato"
+  },
+  {
+    "company": "Shuffle",
+    "domain": "shuffle.com",
+    "industry": "Online Gaming - Operator",
+    "country": "CW",
+    "downdetector_slug": "shuffle"
+  },
+  {
+    "company": "PrizePicks",
+    "domain": "prizepicks.com",
+    "industry": "Online Gaming - Operator",
+    "country": "US",
+    "downdetector_slug": "prizepicks"
+  },
+  {
+    "company": "Underdog Fantasy",
+    "domain": "underdogfantasy.com",
+    "industry": "Online Gaming - Operator",
+    "country": "US",
+    "downdetector_slug": "underdog-fantasy"
+  },
+  {
+    "company": "Sleeper",
+    "domain": "sleeper.com",
+    "industry": "Online Gaming - Operator",
+    "country": "US",
+    "downdetector_slug": "sleeper"
+  },
+  {
+    "company": "Kalshi",
+    "domain": "kalshi.com",
+    "industry": "Online Gaming - Operator",
+    "country": "US",
+    "downdetector_slug": "kalshi"
+  },
+  {
+    "company": "Polymarket",
+    "domain": "polymarket.com",
+    "industry": "Betting",
+    "country": "US",
+    "downdetector_slug": "polymarket"
+  }
+]
