@@ -196,22 +196,30 @@ def parse_signals_from_output(vendor: str, output: str, companies: list[dict]) -
                     signal["detail"] = "perf:OK"
 
         elif vendor == "downdetector":
-            slug = company.get("downdetector_slug", "")
-            if slug and slug in output:
-                for line in output.split("\n"):
-                    if slug in line:
-                        if "OUTAGE" in line:
-                            signal["outage_detected"] = True
-                            # Find severity if present
-                            sev_match = re.search(r'\[(\w+)\]', line)
-                            signal["severity"] = sev_match.group(1).lower() if sev_match else "minor"
-                            signal["detail"] = line.strip()
-                        elif "No problems" in line:
-                            signal["outage_detected"] = False
-                            signal["detail"] = "No problems reported"
-                        elif "not found" in line.lower() or "not available" in line.lower():
-                            signal["detail"] = "Page not available"
-                        break
+            # Match by company name in the "Analyzing {name}..." prefix the
+            # checker emits — slug-based matching was case-sensitive and
+            # silently failed (e.g. slug 'found' never matched line
+            # 'Analyzing Found...'), dropping every downdetector signal
+            # to outage_detected=Unknown and masking real leads.
+            marker = f"Analyzing {name}..."
+            for line in output.splitlines():
+                stripped = line.lstrip()
+                if not stripped.startswith(marker):
+                    continue
+                tail = stripped[len(marker):].strip()
+                if "OUTAGE" in tail:
+                    signal["outage_detected"] = True
+                    sev_match = re.search(r'\[(\w+)\]', tail)
+                    signal["severity"] = sev_match.group(1).lower() if sev_match else "minor"
+                    signal["detail"] = tail
+                elif "No problems" in tail:
+                    signal["outage_detected"] = False
+                    signal["detail"] = "No problems reported"
+                elif "not found" in tail.lower() or "not available" in tail.lower():
+                    signal["detail"] = "Page not available"
+                else:
+                    signal["detail"] = tail
+                break
 
         signals.append(signal)
 
