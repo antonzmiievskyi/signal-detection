@@ -7,6 +7,7 @@ All use Atlassian Statuspage API (no auth required).
 These show PROVIDER-level outages. Cross-reference with which companies use which provider.
 """
 
+import argparse
 import json
 import os
 from datetime import datetime, timezone
@@ -23,8 +24,8 @@ PROVIDERS = {
 }
 
 
-def load_companies() -> list[dict]:
-    with open(COMPANIES_FILE) as f:
+def load_companies(path: str | None = None) -> list[dict]:
+    with open(path if path is not None else COMPANIES_FILE) as f:
         return json.load(f)
 
 
@@ -86,7 +87,11 @@ def format_incident(inc: dict) -> str:
 
 
 def main():
-    companies = load_companies()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--companies", default=COMPANIES_FILE, help="Path to companies JSON file")
+    args = parser.parse_args()
+
+    companies = load_companies(args.companies)
     print("Provider Status Page Checker")
     print(f"Companies monitored: {', '.join(c['company'] for c in companies)}")
     print(f"Timestamp: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")

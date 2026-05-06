@@ -8,6 +8,7 @@ content — extracting status, report counts, and user comment insights.
 Requires: APIFY_TOKEN and OPENAI_API_KEY environment variables.
 """
 
+import argparse
 import json
 import os
 import re
@@ -28,8 +29,8 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 ACTOR_ID = "scrapeunblocker/scrapeunblocker"
 
 
-def load_companies() -> list[dict]:
-    with open(COMPANIES_FILE) as f:
+def load_companies(path: str | None = None) -> list[dict]:
+    with open(path if path is not None else COMPANIES_FILE) as f:
         return json.load(f)
 
 
@@ -246,6 +247,10 @@ def process_fetch_result(fetch_result: dict, slug: str) -> dict:
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--companies", default=COMPANIES_FILE, help="Path to companies JSON file")
+    args = parser.parse_args()
+
     if not APIFY_TOKEN:
         print("ERROR: Set APIFY_TOKEN environment variable.")
         print("  Sign up free at https://console.apify.com/sign-up")
@@ -255,7 +260,7 @@ def main():
     if not OPENAI_API_KEY:
         print("WARNING: OPENAI_API_KEY not set. Using title-based detection only (no AI analysis).")
 
-    companies = load_companies()
+    companies = load_companies(args.companies)
     valid_companies = [c for c in companies if c.get("downdetector_slug")]
 
     print("Downdetector Outage Checker (Apify + AI Analysis)")

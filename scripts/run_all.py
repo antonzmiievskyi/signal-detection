@@ -5,6 +5,7 @@ Runs all checker scripts sequentially, saves results to files and SQLite,
 tracks outage state transitions, then runs AI analysis.
 """
 
+import argparse
 import json
 import os
 import re
@@ -34,7 +35,7 @@ CHECKERS = [
 ANALYZER = ("Signal Analysis", "analyze_signals.py", "signal_report.txt")
 
 
-def run_script(name: str, script: str, output_file: str) -> tuple[bool, str]:
+def run_script(name: str, script: str, output_file: str, companies_path: str | None = None) -> tuple[bool, str]:
     """Run a checker script and save output to results/.
 
     Returns (success, clean_output).
@@ -47,9 +48,13 @@ def run_script(name: str, script: str, output_file: str) -> tuple[bool, str]:
     print(f"  Script: {script}")
     print(f"{'='*70}")
 
+    cmd = [sys.executable, script_path]
+    if companies_path:
+        cmd.extend(["--companies", companies_path])
+
     try:
         result = subprocess.run(
-            [sys.executable, script_path],
+            cmd,
             capture_output=True,
             text=True,
             timeout=600,
@@ -186,10 +191,18 @@ def parse_signals_from_output(vendor: str, output: str, companies: list[dict]) -
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--companies",
+        default=os.path.join(ROOT_DIR, "companies.json"),
+        help="Path to companies JSON file",
+    )
+    args = parser.parse_args()
+
     os.makedirs(RESULTS_DIR, exist_ok=True)
 
     # Load companies
-    companies_path = os.path.join(ROOT_DIR, "companies.json")
+    companies_path = os.path.abspath(args.companies)
     with open(companies_path) as f:
         companies = json.load(f)
 
@@ -207,7 +220,7 @@ def main():
     # Run all checkers and save signals to DB
     step_results = {}
     for name, script, output_file, vendor in CHECKERS:
-        success, output = run_script(name, script, output_file)
+        success, output = run_script(name, script, output_file, companies_path)
         step_results[name] = "OK" if success else "FAILED"
 
         if success and output:
@@ -251,7 +264,7 @@ def main():
 
     # Run analyzer
     print("\n")
-    success, _ = run_script(*ANALYZER, )
+    success, _ = run_script(*ANALYZER, companies_path=companies_path)
     step_results[ANALYZER[0]] = "OK" if success else "FAILED"
 
     # Finish run

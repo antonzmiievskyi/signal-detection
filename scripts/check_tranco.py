@@ -7,6 +7,7 @@ web properties and track rank changes over time.
 No authentication required for basic lookups.
 """
 
+import argparse
 import json
 import os
 import sys
@@ -18,8 +19,8 @@ COMPANIES_FILE = os.path.join(os.path.dirname(__file__), "..", "companies.json")
 TRANCO_API = "https://tranco-list.eu/api"
 
 
-def load_companies() -> list[dict]:
-    with open(COMPANIES_FILE) as f:
+def load_companies(path: str | None = None) -> list[dict]:
+    with open(path if path is not None else COMPANIES_FILE) as f:
         return json.load(f)
 
 
@@ -75,7 +76,11 @@ def analyze_rank_trend(ranks: list[dict]) -> dict:
 
 
 def main():
-    companies = load_companies()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--companies", default=COMPANIES_FILE, help="Path to companies JSON file")
+    args = parser.parse_args()
+
+    companies = load_companies(args.companies)
     print("Tranco List Domain Ranking Checker")
     print(f"Checking {len(companies)} companies")
     print("=" * 70)

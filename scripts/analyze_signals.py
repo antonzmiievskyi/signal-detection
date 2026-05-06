@@ -8,6 +8,7 @@ with actionable outreach opportunities.
 Requires: OPENAI_API_KEY environment variable.
 """
 
+import argparse
 import json
 import os
 import sys
@@ -23,8 +24,8 @@ COMPANIES_FILE = os.path.join(os.path.dirname(__file__), "..", "companies.json")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 
 
-def load_companies() -> list[dict]:
-    with open(COMPANIES_FILE) as f:
+def load_companies(path: str | None = None) -> list[dict]:
+    with open(path if path is not None else COMPANIES_FILE) as f:
         return json.load(f)
 
 
@@ -182,11 +183,15 @@ issues across all vendors, say so briefly — don't pad the report."""
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--companies", default=COMPANIES_FILE, help="Path to companies JSON file")
+    args = parser.parse_args()
+
     if not OPENAI_API_KEY:
         print("ERROR: Set OPENAI_API_KEY environment variable in .env")
         sys.exit(1)
 
-    companies = load_companies()
+    companies = load_companies(args.companies)
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
     print("Signal Analyzer — Cross-Vendor Report")

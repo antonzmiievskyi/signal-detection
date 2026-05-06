@@ -10,6 +10,7 @@ It's useful for assessing general site performance quality.
 Requires: CRUX_API_KEY environment variable (free Google Cloud API key).
 """
 
+import argparse
 import json
 import os
 import sys
@@ -35,8 +36,8 @@ THRESHOLDS = {
 }
 
 
-def load_companies() -> list[dict]:
-    with open(COMPANIES_FILE) as f:
+def load_companies(path: str | None = None) -> list[dict]:
+    with open(path if path is not None else COMPANIES_FILE) as f:
         return json.load(f)
 
 
@@ -88,13 +89,17 @@ def format_metric_value(metric_name: str, value: float) -> str:
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--companies", default=COMPANIES_FILE, help="Path to companies JSON file")
+    args = parser.parse_args()
+
     if not API_KEY:
         print("ERROR: Set CRUX_API_KEY environment variable.")
         print("  Get a free API key at https://console.cloud.google.com/apis/credentials")
         print("  Enable the 'Chrome UX Report API'")
         sys.exit(1)
 
-    companies = load_companies()
+    companies = load_companies(args.companies)
     print("CrUX Performance Checker")
     print(f"Checking {len(companies)} companies")
     print()

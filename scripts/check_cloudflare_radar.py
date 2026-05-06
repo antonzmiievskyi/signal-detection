@@ -7,6 +7,7 @@ CROC tracks country/ASN-level disruptions, not per-company outages.
 Requires: CLOUDFLARE_RADAR_TOKEN environment variable (free API token with Account > Radar > Read).
 """
 
+import argparse
 import json
 import os
 import sys
@@ -22,8 +23,8 @@ BASE_URL = "https://api.cloudflare.com/client/v4/radar"
 TOKEN = os.environ.get("CLOUDFLARE_RADAR_TOKEN", "")
 
 
-def load_companies() -> list[dict]:
-    with open(COMPANIES_FILE) as f:
+def load_companies(path: str | None = None) -> list[dict]:
+    with open(path if path is not None else COMPANIES_FILE) as f:
         return json.load(f)
 
 
@@ -50,13 +51,17 @@ def get_outage_counts_by_location(date_range: str = "30d") -> list[dict]:
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--companies", default=COMPANIES_FILE, help="Path to companies JSON file")
+    args = parser.parse_args()
+
     if not TOKEN:
         print("ERROR: Set CLOUDFLARE_RADAR_TOKEN environment variable.")
         print("  Create a free token at https://dash.cloudflare.com/profile/api-tokens")
         print("  Permission needed: Account > Radar > Read")
         sys.exit(1)
 
-    companies = load_companies()
+    companies = load_companies(args.companies)
 
     # Get unique countries from company list
     countries = sorted(set(c["country"] for c in companies))
