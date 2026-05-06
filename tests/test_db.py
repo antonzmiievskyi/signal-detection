@@ -3,14 +3,17 @@
 import json
 import os
 import tempfile
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from scripts.db import (
     CONFIDENCE_THRESHOLD,
+    MIN_DURATION_SECONDS_DEFAULT,
     VENDOR_WEIGHTS,
     compute_confidence,
     finish_run,
+    get_active_candidates,
     get_active_outages,
     get_connection,
     get_outage_history,
@@ -326,6 +329,92 @@ class TestConfidenceGating:
         transitions = update_outages(r2, db_path)
         assert any(t["transition"] == "resolved" for t in transitions)
         assert get_active_outages(db_path) == []
+
+
+class TestCandidateFlow:
+    """T_min — candidates wait in a holding pen until they sustain ≥ T_min."""
+
+    T_MIN = 5 * 60  # 5 minutes — matches Lukasz's lower bound
+
+    def test_first_pass_creates_candidate_not_outage(self, db_path):
+        run_id = start_run(db_path)
+        save_signal(run_id, "Acme", "acme.com", "downdetector",
+                    outage_detected=True, severity="major", db_path=db_path)
+        transitions = update_outages(run_id, db_path, min_duration_seconds=self.T_MIN)
+
+        assert any(t["transition"] == "candidate" for t in transitions)
+        assert get_active_outages(db_path) == []
+        candidates = get_active_candidates(db_path)
+        assert len(candidates) == 1
+        assert candidates[0]["company"] == "Acme"
+
+    def test_candidate_promoted_after_t_min(self, db_path):
+        # Run 1: candidate opens.
+        run1 = start_run(db_path)
+        save_signal(run1, "Acme", "acme.com", "downdetector",
+                    outage_detected=True, severity="major", db_path=db_path)
+        update_outages(run1, db_path, min_duration_seconds=self.T_MIN)
+
+        # Backdate the candidate so the next run sees it as past T_min.
+        conn = get_connection(db_path)
+        backdated = (datetime.now(timezone.utc) - timedelta(seconds=self.T_MIN + 60)).isoformat()
+        conn.execute("UPDATE outage_candidates SET first_detected_at=?", (backdated,))
+        conn.commit()
+        conn.close()
+
+        # Run 2: confidence still ≥ τ → promote.
+        run2 = start_run(db_path)
+        save_signal(run2, "Acme", "acme.com", "downdetector",
+                    outage_detected=True, severity="major", db_path=db_path)
+        transitions = update_outages(run2, db_path, min_duration_seconds=self.T_MIN)
+
+        assert any(t["transition"] == "promoted" for t in transitions)
+        active = get_active_outages(db_path)
+        assert len(active) == 1
+        assert get_active_candidates(db_path) == []
+        # started_at must be the original first-detection time, not run-2 time.
+        assert active[0]["started_at"] == backdated
+
+    def test_candidate_pending_below_t_min(self, db_path):
+        run1 = start_run(db_path)
+        save_signal(run1, "Acme", "acme.com", "downdetector",
+                    outage_detected=True, severity="major", db_path=db_path)
+        update_outages(run1, db_path, min_duration_seconds=self.T_MIN)
+
+        run2 = start_run(db_path)
+        save_signal(run2, "Acme", "acme.com", "downdetector",
+                    outage_detected=True, severity="major", db_path=db_path)
+        transitions = update_outages(run2, db_path, min_duration_seconds=self.T_MIN)
+
+        assert any(t["transition"] == "pending" for t in transitions)
+        assert get_active_outages(db_path) == []
+        assert len(get_active_candidates(db_path)) == 1
+
+    def test_candidate_dropped_when_evidence_falls(self, db_path):
+        run1 = start_run(db_path)
+        save_signal(run1, "Acme", "acme.com", "downdetector",
+                    outage_detected=True, severity="major", db_path=db_path)
+        update_outages(run1, db_path, min_duration_seconds=self.T_MIN)
+        assert len(get_active_candidates(db_path)) == 1
+
+        run2 = start_run(db_path)
+        save_signal(run2, "Acme", "acme.com", "downdetector",
+                    outage_detected=False, db_path=db_path)
+        transitions = update_outages(run2, db_path, min_duration_seconds=self.T_MIN)
+
+        assert any(t["transition"] == "candidate_dropped" for t in transitions)
+        assert get_active_candidates(db_path) == []
+        assert get_active_outages(db_path) == []
+
+    def test_zero_t_min_preserves_legacy_immediate_creation(self, db_path):
+        run_id = start_run(db_path)
+        save_signal(run_id, "Acme", "acme.com", "downdetector",
+                    outage_detected=True, severity="major", db_path=db_path)
+        transitions = update_outages(run_id, db_path, min_duration_seconds=0)
+
+        assert any(t["transition"] == "new" for t in transitions)
+        assert len(get_active_outages(db_path)) == 1
+        assert get_active_candidates(db_path) == []
 
 
 class TestComputeConfidence:

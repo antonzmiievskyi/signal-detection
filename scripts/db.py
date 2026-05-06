@@ -35,6 +35,14 @@ VENDOR_WEIGHTS: dict[str, float] = {
 # triggers a lead, but no weak/context-only source does alone.
 CONFIDENCE_THRESHOLD: float = 0.5
 
+# Minimum sustained duration before a candidate is promoted into the
+# outages table. Implements Lukasz's "5min+" floor — a single transient
+# blip won't create a lead even if confidence ≥ τ in one run. Library
+# default is 0 (legacy / immediate-promotion) so existing callers and
+# tests don't break; production callers (run_all.py CLI) set the real
+# value, default 5 min.
+MIN_DURATION_SECONDS_DEFAULT: int = 5 * 60
+
 
 def get_connection(db_path: str = DB_PATH) -> sqlite3.Connection:
     """Get a database connection with row factory enabled."""
@@ -87,6 +95,18 @@ def init_db(db_path: str = DB_PATH):
 
         CREATE INDEX IF NOT EXISTS idx_outages_company ON outages(company);
         CREATE INDEX IF NOT EXISTS idx_outages_active ON outages(ended_at);
+
+        CREATE TABLE IF NOT EXISTS outage_candidates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company TEXT NOT NULL UNIQUE,
+            domain TEXT,
+            first_detected_at TEXT NOT NULL,
+            last_confirmed_at TEXT NOT NULL,
+            severity TEXT,
+            vendors_confirmed TEXT,
+            confidence REAL
+        );
+        CREATE INDEX IF NOT EXISTS idx_candidates_company ON outage_candidates(company);
     """)
 
     # Additive migration: confidence column on outages.
@@ -166,23 +186,34 @@ def compute_confidence(vendors: list[str]) -> float:
     return sum(VENDOR_WEIGHTS.get(v, 0.0) for v in set(vendors))
 
 
-def update_outages(run_id: int, db_path: str = DB_PATH) -> list[dict]:
-    """Process signals from a run to detect outage state transitions, gated
-    by confidence scoring.
+def update_outages(
+    run_id: int,
+    db_path: str = DB_PATH,
+    min_duration_seconds: int = 0,
+    now: datetime | None = None,
+) -> list[dict]:
+    """Process signals from a run to detect outage state transitions.
 
-    For each company with signals in this run:
-      - confidence = sum of VENDOR_WEIGHTS over vendors that flagged it
-      - if confidence >= τ and no active outage → NEW
-      - if confidence >= τ and has active outage → ONGOING
-      - if confidence <  τ and has active outage → RESOLVED (insufficient evidence)
-      - if confidence <  τ and no active outage → no transition
+    Two gates apply:
 
-    The threshold gate stops single-vendor weak/context signals (e.g.
-    provider_status alone) from creating outage rows; existing rows from
-    pre-confidence runs get closed naturally on the next run when their
-    evidence drops below τ.
+      1. Confidence (τ): sum of vendor weights over confirming vendors must
+         reach CONFIDENCE_THRESHOLD before a company is considered "down".
+      2. Duration (T_min): a company that crosses τ enters the
+         outage_candidates pool first and is only promoted to the outages
+         table once it stays above τ for `min_duration_seconds`. Single-run
+         flickers and short-lived blips never reach the outages table.
 
-    Returns transitions: [{"company", "transition", "confidence", ...}]
+    Transitions returned:
+      candidate          — first run a company crossed τ; T_min countdown started
+      pending            — already a candidate, still inside the T_min window
+      promoted           — candidate matured; outage row created (started_at
+                           = first_detected_at so duration history is real)
+      candidate_dropped  — candidate's evidence fell below τ before T_min
+      new                — only emitted when min_duration_seconds == 0 (legacy
+                           direct-creation path; preserved so existing call
+                           sites and tests don't change semantics)
+      ongoing            — outage row already exists; vendors/confidence merged
+      resolved           — outage row exists, evidence fell below τ; row closed
     """
     conn = get_connection(db_path)
     transitions = []
@@ -192,7 +223,8 @@ def update_outages(run_id: int, db_path: str = DB_PATH) -> list[dict]:
         (run_id,),
     ).fetchall()
 
-    now = datetime.now(timezone.utc).isoformat()
+    now_dt = now if now is not None else datetime.now(timezone.utc)
+    now_iso = now_dt.isoformat()
 
     for row in rows:
         company = row["company"]
@@ -210,59 +242,144 @@ def update_outages(run_id: int, db_path: str = DB_PATH) -> list[dict]:
             (company,),
         ).fetchone()
 
+        candidate = conn.execute(
+            """SELECT id, first_detected_at, vendors_confirmed
+               FROM outage_candidates WHERE company = ?""",
+            (company,),
+        ).fetchone()
+
         vendors = [s["vendor"] for s in outage_signals]
         confidence = compute_confidence(vendors)
         passes = confidence >= CONFIDENCE_THRESHOLD
+        worst_severity = _worst_severity([s["severity"] for s in outage_signals])
+        details = "; ".join(s["detail"] for s in outage_signals if s["detail"])
 
-        if passes and not active_outage:
-            worst_severity = _worst_severity([s["severity"] for s in outage_signals])
-            details = "; ".join(s["detail"] for s in outage_signals if s["detail"])
-            conn.execute(
-                """INSERT INTO outages (company, domain, started_at, severity,
-                   vendors_confirmed, detail, confidence)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (company, domain, now, worst_severity, json.dumps(vendors), details, confidence),
-            )
-            transitions.append({
-                "company": company, "transition": "new",
-                "severity": worst_severity, "vendors": vendors,
-                "confidence": confidence, "detail": details,
-            })
-
-        elif passes and active_outage:
+        if passes and active_outage:
+            # ONGOING — already promoted, just merge metadata.
             merged_vendors = sorted(set(
                 json.loads(active_outage["vendors_confirmed"] or "[]") + vendors
             ))
             merged_confidence = compute_confidence(merged_vendors)
-            worst_severity = _worst_severity(
+            merged_severity = _worst_severity(
                 [s["severity"] for s in outage_signals] + [active_outage["severity"]]
             )
             conn.execute(
-                """UPDATE outages SET vendors_confirmed = ?, severity = ?, confidence = ?
-                   WHERE id = ?""",
-                (json.dumps(merged_vendors), worst_severity, merged_confidence, active_outage["id"]),
+                """UPDATE outages SET vendors_confirmed=?, severity=?, confidence=?
+                   WHERE id=?""",
+                (json.dumps(merged_vendors), merged_severity, merged_confidence, active_outage["id"]),
             )
             transitions.append({
                 "company": company, "transition": "ongoing",
-                "severity": worst_severity, "vendors": merged_vendors,
+                "severity": merged_severity, "vendors": merged_vendors,
                 "confidence": merged_confidence,
             })
 
-        elif not passes and active_outage:
-            # Either no outage signals at all, or confidence dropped below τ.
-            conn.execute(
-                "UPDATE outages SET ended_at = ? WHERE id = ?",
-                (now, active_outage["id"]),
-            )
-            transitions.append({
-                "company": company, "transition": "resolved",
-                "confidence": confidence,
-            })
-        # else: not passes and no active outage → no transition
+        elif passes and candidate:
+            # Candidate exists — has it matured into a real outage?
+            try:
+                first_dt = datetime.fromisoformat(candidate["first_detected_at"])
+            except ValueError:
+                first_dt = now_dt  # corrupt timestamp — treat as just-now
+            age_seconds = (now_dt - first_dt).total_seconds()
+
+            if age_seconds >= min_duration_seconds:
+                # PROMOTE — started_at is the original first-detected time so
+                # the recorded outage duration reflects reality, not when we
+                # decided to write the row.
+                conn.execute(
+                    """INSERT INTO outages (company, domain, started_at, severity,
+                       vendors_confirmed, detail, confidence)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (company, domain, candidate["first_detected_at"], worst_severity,
+                     json.dumps(vendors), details, confidence),
+                )
+                conn.execute("DELETE FROM outage_candidates WHERE id = ?", (candidate["id"],))
+                transitions.append({
+                    "company": company, "transition": "promoted",
+                    "severity": worst_severity, "vendors": vendors,
+                    "confidence": confidence, "detail": details,
+                    "duration_seconds": age_seconds,
+                })
+            else:
+                # Still inside T_min window — refresh the candidate.
+                conn.execute(
+                    """UPDATE outage_candidates
+                       SET last_confirmed_at=?, vendors_confirmed=?, confidence=?, severity=?
+                       WHERE id=?""",
+                    (now_iso, json.dumps(vendors), confidence, worst_severity, candidate["id"]),
+                )
+                transitions.append({
+                    "company": company, "transition": "pending",
+                    "severity": worst_severity, "vendors": vendors,
+                    "confidence": confidence,
+                    "age_seconds": age_seconds,
+                    "remaining_seconds": max(0, min_duration_seconds - age_seconds),
+                })
+
+        elif passes:
+            # First time crossing τ for this company. With T_min == 0 we
+            # preserve the legacy "create outage immediately" semantics so
+            # existing callers don't break; otherwise we open a candidate.
+            if min_duration_seconds <= 0:
+                conn.execute(
+                    """INSERT INTO outages (company, domain, started_at, severity,
+                       vendors_confirmed, detail, confidence)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (company, domain, now_iso, worst_severity, json.dumps(vendors), details, confidence),
+                )
+                transitions.append({
+                    "company": company, "transition": "new",
+                    "severity": worst_severity, "vendors": vendors,
+                    "confidence": confidence, "detail": details,
+                })
+            else:
+                conn.execute(
+                    """INSERT INTO outage_candidates (company, domain, first_detected_at,
+                       last_confirmed_at, severity, vendors_confirmed, confidence)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (company, domain, now_iso, now_iso, worst_severity, json.dumps(vendors), confidence),
+                )
+                transitions.append({
+                    "company": company, "transition": "candidate",
+                    "severity": worst_severity, "vendors": vendors,
+                    "confidence": confidence,
+                })
+
+        else:
+            # confidence < τ
+            if active_outage:
+                conn.execute(
+                    "UPDATE outages SET ended_at=? WHERE id=?",
+                    (now_iso, active_outage["id"]),
+                )
+                transitions.append({
+                    "company": company, "transition": "resolved",
+                    "confidence": confidence,
+                })
+            if candidate:
+                conn.execute("DELETE FROM outage_candidates WHERE id=?", (candidate["id"],))
+                transitions.append({
+                    "company": company, "transition": "candidate_dropped",
+                    "confidence": confidence,
+                })
+            # else: no candidate, no outage — nothing to record
 
     conn.commit()
     conn.close()
     return transitions
+
+
+def get_active_candidates(db_path: str = DB_PATH) -> list[dict]:
+    """List outage candidates currently in the T_min waiting window."""
+    conn = get_connection(db_path)
+    rows = conn.execute(
+        """SELECT id, company, domain, first_detected_at, last_confirmed_at,
+                  severity, vendors_confirmed, confidence
+           FROM outage_candidates
+           ORDER BY first_detected_at"""
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 def get_active_outages(db_path: str = DB_PATH) -> list[dict]:

@@ -16,7 +16,8 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 from db import init_db, start_run, finish_run, save_signal, update_outages
-from db import get_active_outages, get_run_summary
+from db import get_active_outages, get_active_candidates, get_run_summary
+from db import MIN_DURATION_SECONDS_DEFAULT
 
 load_dotenv()
 
@@ -233,7 +234,18 @@ def main():
         default=os.path.join(ROOT_DIR, "companies.json"),
         help="Path to companies JSON file",
     )
+    parser.add_argument(
+        "--min-duration",
+        type=int,
+        default=MIN_DURATION_SECONDS_DEFAULT // 60,
+        help=(
+            "Minimum sustained duration in MINUTES before a candidate is promoted "
+            f"to an outage row (default: {MIN_DURATION_SECONDS_DEFAULT // 60}). "
+            "Set 0 to skip the candidate stage and create outages immediately."
+        ),
+    )
     args = parser.parse_args()
+    min_duration_seconds = max(0, args.min_duration) * 60
 
     os.makedirs(RESULTS_DIR, exist_ok=True)
 
@@ -276,18 +288,38 @@ def main():
     print(f"\n{'='*70}")
     print("  OUTAGE TRANSITIONS")
     print(f"{'='*70}")
-    transitions = update_outages(run_id)
+    transitions = update_outages(run_id, min_duration_seconds=min_duration_seconds)
+    icons = {
+        "new": "!!!", "ongoing": "...", "resolved": "OK ",
+        "candidate": "?? ", "pending": ".. ",
+        "promoted": "!!!", "candidate_dropped": "-- ",
+    }
     if transitions:
         for t in transitions:
-            icon = {"new": "!!!", "ongoing": "...", "resolved": "OK "}[t["transition"]]
+            icon = icons.get(t["transition"], "   ")
             print(f"  [{icon}] {t['company']}: {t['transition'].upper()}", end="")
             if t.get("severity"):
                 print(f" (severity: {t['severity']})", end="")
+            if t.get("confidence") is not None:
+                print(f" conf={t['confidence']:.2f}", end="")
             if t.get("vendors"):
-                print(f" — confirmed by: {', '.join(t['vendors'])}", end="")
+                print(f" — vendors: {', '.join(t['vendors'])}", end="")
+            if t.get("remaining_seconds") is not None:
+                print(f" — {int(t['remaining_seconds'])}s left to T_min", end="")
+            if t.get("duration_seconds") is not None:
+                print(f" — sustained {int(t['duration_seconds'])}s", end="")
             print()
     else:
         print("  No outage state changes.")
+
+    # Candidates currently waiting out the T_min window
+    candidates = get_active_candidates()
+    if candidates:
+        print(f"\n  Pending candidates ({len(candidates)} — waiting for T_min={min_duration_seconds}s):")
+        for c in candidates:
+            vendors = ", ".join(json.loads(c.get("vendors_confirmed") or "[]"))
+            conf = c.get("confidence")
+            print(f"    - {c['company']} [{c.get('severity') or '-'}] conf={conf:.2f} vendors={vendors} since {c['first_detected_at']}")
 
     # Show active outages
     active = get_active_outages()
