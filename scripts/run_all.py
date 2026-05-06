@@ -175,18 +175,20 @@ def parse_signals_from_output(vendor: str, output: str, companies: list[dict]) -
                 signal["detail"] = f"No network outages in {country}"
 
         elif vendor == "crux":
+            # CrUX is a 28-day rolling p75 — a performance signal, NOT an
+            # outage signal. Always outage_detected=False; detail prefixed
+            # with perf: so analyze_signals.py routes it to the perf stream.
             section_header = f"--- {name} ("
             if section_header in output:
                 start = output.index(section_header)
                 end = output.find("\n---", start + 1)
                 section = output[start:end] if end != -1 else output[start:]
                 poor = [l.strip() for l in section.split("\n") if "POOR" in l and "p75=" in l]
+                signal["outage_detected"] = False
                 if poor:
-                    signal["severity"] = "minor"
-                    signal["detail"] = "; ".join(poor)
+                    signal["detail"] = f"perf:POOR; {'; '.join(poor)}"
                 else:
-                    signal["outage_detected"] = False
-                    signal["detail"] = "All metrics acceptable"
+                    signal["detail"] = "perf:OK"
 
         elif vendor == "downdetector":
             slug = company.get("downdetector_slug", "")

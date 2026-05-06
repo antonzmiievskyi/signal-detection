@@ -95,21 +95,59 @@ def build_cross_reference(companies: list[dict], results: dict[str, str]) -> str
                     lines.append(f"  Downdetector: {line.strip()}")
                     break
 
-        # CrUX performance — match section header "--- {name} (" to avoid summary false positives
-        crux = results.get("crux", "")
+        # CrUX intentionally excluded from this cross-reference — it's a
+        # 28-day rolling perf metric, not an outage signal. See the
+        # PERFORMANCE SUMMARY section appended to the report.
+
+    return "\n".join(lines)
+
+
+def build_perf_summary(companies: list[dict], crux_output: str) -> str:
+    """Separate stream for CrUX-driven performance signals.
+
+    These are not outages — they're 28-day rolling p75 measurements that
+    feed a different sales motion (performance / CDN optimization), not
+    incident-response outreach. Kept explicitly distinct from the outage
+    signal report so they don't bleed into lead scoring.
+    """
+    if not crux_output:
+        return ""
+
+    lines = ["=" * 70,
+             "PERFORMANCE SUMMARY (CrUX, 28-day rolling p75)",
+             "NOTE: separate sales motion from outage signals — do not combine.",
+             "=" * 70, ""]
+
+    poor: list[tuple[str, list[str]]] = []
+    needs_work: list[tuple[str, int]] = []
+
+    for c in companies:
+        name = c["company"]
         section_header = f"--- {name} ("
-        if section_header in crux:
-            start = crux.index(section_header)
-            end = crux.find("\n---", start + 1)
-            section = crux[start:end] if end != -1 else crux[start:]
-            poor = [l.strip() for l in section.split("\n") if "POOR" in l and "p75=" in l]
-            needs_work = [l.strip() for l in section.split("\n") if "NEEDS WORK" in l and "p75=" in l]
-            if poor:
-                lines.append(f"  CrUX: POOR metrics: {'; '.join(poor)}")
-            elif needs_work:
-                lines.append(f"  CrUX: Some metrics need work ({len(needs_work)} metrics)")
-            else:
-                lines.append(f"  CrUX: All metrics GOOD")
+        if section_header not in crux_output:
+            continue
+        start = crux_output.index(section_header)
+        end = crux_output.find("\n---", start + 1)
+        section = crux_output[start:end] if end != -1 else crux_output[start:]
+        poor_metrics = [l.strip() for l in section.split("\n") if "POOR" in l and "p75=" in l]
+        nw_metrics = [l.strip() for l in section.split("\n") if "NEEDS WORK" in l and "p75=" in l]
+        if poor_metrics:
+            poor.append((name, poor_metrics))
+        elif nw_metrics:
+            needs_work.append((name, len(nw_metrics)))
+
+    if poor:
+        lines.append("POOR (perf-optimization outreach candidates):")
+        for name, metrics in poor:
+            lines.append(f"  - {name}: {'; '.join(metrics)}")
+    else:
+        lines.append("No POOR metrics across the list.")
+
+    if needs_work:
+        lines.append("")
+        lines.append("NEEDS WORK (watch list):")
+        for name, count in needs_work:
+            lines.append(f"  - {name}: {count} metrics")
 
     return "\n".join(lines)
 
@@ -127,14 +165,19 @@ def analyze_with_openai(companies_json: str, cross_ref: str, raw_results: dict[s
     raw_data = "\n\n".join(raw_sections)
 
     prompt = f"""You are a sales intelligence analyst for a cybersecurity/CDN company.
-Analyze the following data from multiple monitoring sources to identify **sales signals** —
-companies that are experiencing or recently experienced service issues, making them
-potential prospects for outreach.
+Analyze the following data to identify **outage-driven sales signals** —
+companies that are experiencing or recently experienced service incidents,
+making them candidates for incident-response / resilience outreach.
+
+IMPORTANT: This analysis is for OUTAGE signals only. CrUX (28-day rolling
+p75 performance) is a SEPARATE sales motion (perf optimization) and is
+not included in this input. Do NOT ask for or invent CrUX data, and do
+NOT factor performance metrics into outage signal strength.
 
 ## Target Companies
 {companies_json}
 
-## Cross-Reference Summary (all vendors combined per company)
+## Cross-Reference Summary (outage-relevant vendors per company)
 {cross_ref}
 
 ## Raw Data from Each Vendor
@@ -146,15 +189,17 @@ Produce a structured report with these sections:
 
 ### 1. Signal Strength Rating
 For each company, rate the signal strength (STRONG / MODERATE / WEAK / NONE):
-- STRONG: Multiple sources confirm issues (e.g., Downdetector outage + provider incident + poor CrUX)
-- MODERATE: One source shows issues with supporting evidence
-- WEAK: Minor indicators only
-- NONE: No issues detected
+- STRONG: Multiple realtime sources confirm an outage (e.g., Downdetector spike
+  + provider incident on the company's actual upstream)
+- MODERATE: One realtime source shows issues with supporting context
+- WEAK: Minor or single-source indicator
+- NONE: No outage signals detected
 
 ### 2. Vendor Agreement Matrix
-Show where vendors agree or disagree. When multiple vendors report issues for the same
-company, that's a stronger signal. When they disagree, explain why (e.g., CrUX is 28-day
-average so it won't show recent outages).
+Show where vendors agree or disagree on outage status. Multiple vendors
+flagging the same company is a stronger signal. Note shared-upstream
+patterns (multiple companies on the same provider lighting up at once)
+as one upstream incident, not N separate leads.
 
 ### 3. Actionable Signals (ranked by priority)
 For each company with MODERATE or STRONG signal:
@@ -169,8 +214,8 @@ Rate each vendor's usefulness for this specific check:
 - What didn't work or was limited
 - Recommendations for improving detection
 
-Be specific. Use actual data from the reports, not generic advice. If a company shows no
-issues across all vendors, say so briefly — don't pad the report."""
+Be specific. Use actual data from the reports, not generic advice. If a
+company shows no outage signals, say so briefly — don't pad the report."""
 
     response = client.chat.completions.create(
         model="gpt-4.1-mini",
@@ -222,13 +267,21 @@ def main():
         print("  Run the checker scripts first.")
         sys.exit(1)
 
-    # Build cross-reference
+    # Split CrUX out of the outage flow — it feeds a separate perf stream.
+    crux_output = results.pop("crux", "")
+
+    # Build cross-reference (outage signals only)
     print("\nBuilding cross-reference table...")
     cross_ref = build_cross_reference(companies, results)
     print(cross_ref)
 
-    # Analyze with OpenAI
-    print("\n\nSending to OpenAI for signal analysis...")
+    # Build perf summary (CrUX-driven, separate sales motion)
+    perf_summary = build_perf_summary(companies, crux_output)
+    if perf_summary:
+        print("\n\n" + perf_summary)
+
+    # Analyze with OpenAI (outage signals only — CrUX excluded by design)
+    print("\n\nSending to OpenAI for outage signal analysis...")
     companies_json = json.dumps(companies, indent=2)
     analysis = analyze_with_openai(companies_json, cross_ref, results)
 
@@ -242,13 +295,15 @@ def main():
     with open(report_path, "w") as f:
         f.write(f"Signal Detection Report — {timestamp}\n")
         f.write(f"{'=' * 70}\n\n")
-        f.write("CROSS-REFERENCE TABLE\n")
+        f.write("CROSS-REFERENCE TABLE (outage signals)\n")
         f.write(f"{'=' * 70}\n")
         f.write(cross_ref)
         f.write(f"\n\n{'=' * 70}\n")
-        f.write("AI SIGNAL ANALYSIS\n")
+        f.write("AI SIGNAL ANALYSIS (outage-driven)\n")
         f.write(f"{'=' * 70}\n")
         f.write(analysis)
+        if perf_summary:
+            f.write(f"\n\n{perf_summary}\n")
         f.write("\n")
 
     print(f"\n\nFull report saved to: {report_path}")
